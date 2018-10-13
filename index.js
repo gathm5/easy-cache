@@ -104,7 +104,6 @@ exports = {
   clear,
   getId,
   remove,
-  eventCall,
   getDataById,
   saveDataById,
   disableEvents,
