@@ -97,7 +97,7 @@ const on = (eventName, fn) => {
   });
 };
 
-exports = {
+module.exports = {
   on,
   get,
   save,
