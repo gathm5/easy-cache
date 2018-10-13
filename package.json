@@ -1,0 +1,23 @@
+{
+  "name": "easy-cache",
+  "version": "1.0.0",
+  "description": "Easy cache management without worrying about managing unique ids and invalidation",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gautham1985/easy-cache.git"
+  },
+  "keywords": [
+    "cache",
+    "management"
+  ],
+  "author": "Gautham Stalin <gstalin.appdev@gmail.com>",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/gautham1985/easy-cache/issues"
+  },
+  "homepage": "https://github.com/gautham1985/easy-cache#readme"
+}
