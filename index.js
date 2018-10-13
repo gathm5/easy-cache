@@ -65,10 +65,12 @@ const save = (props, data, expiresDateOrMs = null) => {
   const useKey = findKeyFromCacheKeys(props) || shortid();
   cacheData[useKey] = data;
   cacheProps[useKey] = { props, expires };
-  timers[useKey] = setTimeout(() => {
-    removeDataById(useKey);
-    cacheEventEmitter.emit('cache_removed', props, useKey);
-  }, expires - new Date().getTime());
+  if (expires) {
+    timers[useKey] = setTimeout(() => {
+      removeDataById(useKey);
+      cacheEventEmitter.emit('cache_removed', props, useKey);
+    }, expires - new Date().getTime());
+  }
 };
 const saveDataById = (id, data) => { cacheData[id] = data; };
 const get = (props) => {
