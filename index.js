@@ -1,22 +1,25 @@
 const EventEmitter = require('events');
-const cacheEventEmitter = new EventEmitter();
+
+const DEFAULT_EXCEED_MEMORY = false;
+const DEFAULT_EVENTS_ENABLED = true;
+const DEFAULT_MAX_SAVE_COUNT = Infinity;
+const DEFAULT_MAX_MEMORY_ALLOCATED = 3e6;
 
 let lruTimer;
+let STORE = {
+  CACHED_DATA: {},
+  CACHED_PROPS: {},
+  CACHED_ORDERED_HEAP: [],
+};
+
 const timers = {};
-let cacheData = {};
-let cacheHeap = [];
-let cacheProps = {};
-let exceedLimit = false;
-let EVENT_ENABLED = true;
+const cacheEventEmitter = new EventEmitter();
 
-const MAX_SAVE_COUNT = Infinity;
-const MAX_MEMORY_ALLOCATED = 3e6;
-
-let OPTIONS = {
-  MAX_COUNT: MAX_SAVE_COUNT,
-  EXCEED_MEMORY: exceedLimit,
-  EVENTS_ENABLED: EVENT_ENABLED,
-  MAX_STORAGE: MAX_MEMORY_ALLOCATED,
+const OPTIONS = {
+  MAX_COUNT: DEFAULT_MAX_SAVE_COUNT,
+  EXCEED_MEMORY: DEFAULT_EXCEED_MEMORY,
+  EVENTS_ENABLED: DEFAULT_EVENTS_ENABLED,
+  MAX_STORAGE: DEFAULT_MAX_MEMORY_ALLOCATED,
 };
 
 const isNull = v => v === null;
@@ -24,13 +27,12 @@ const keys = obj => Object.keys(obj);
 const isDate = v => v instanceof Date;
 const isObj = v => typeof v === 'object';
 const isNum = v => typeof v === 'number';
-const disableEvents = () => { EVENT_ENABLED = false; };
+const disableEvents = () => { OPTIONS.EVENTS_ENABLED = false; };
 const shallowCompare = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const shortid = () => `easy_cache__${(new Date().getTime() * Math.random()).toString(36).replace(/[^a-z]+/g, '').substr(0, 8)}`;
 
 const deepCompare = (a, b) => {
-  const aKeys = keys(a);
-  const bKeys = keys(b);
+  const aKeys = keys(a), bKeys = keys(b);
   if (aKeys.length !== bKeys.length) return false;
   return !aKeys.find(key => !compare(a[key], b[key]));
 };
@@ -42,18 +44,18 @@ const compare = (a, b) => {
 
 const findKeyFromCacheKeys = (props) => {
   let useKey;
-  Object.keys(cacheProps).find((key) => {
-    if (compare((cacheProps[key] || {}).props, props)) {
+  Object.keys(STORE.CACHED_PROPS).find((key) => {
+    if (compare((STORE.CACHED_PROPS[key] || {}).props, props)) {
       useKey = key;
       return true;
     }
     return false;
   });
-  if (!cacheProps[useKey]) { return undefined; }
-  const { expires } = cacheProps[useKey];
+  if (!STORE.CACHED_PROPS[useKey]) { return undefined; }
+  const { expires } = STORE.CACHED_PROPS[useKey];
   if (!expires || new Date().getTime() < expires) { return useKey; }
-  cacheData[useKey] = undefined;
-  cacheProps[useKey] = undefined;
+  STORE.CACHED_DATA[useKey] = undefined;
+  STORE.CACHED_PROPS[useKey] = undefined;
   if(OPTIONS.EVENTS_ENABLED) { cacheEventEmitter.emit('cache_removed', props, useKey); }
   return undefined;
 };
@@ -75,9 +77,9 @@ const save = (props, data, expiresDateOrMs = null) => {
     default:
   }
   const useKey = findKeyFromCacheKeys(props) || shortid();
-  cacheHeap = [useKey, ...cacheHeap.filter(v => v !== useKey)]
-  cacheData[useKey] = data;
-  cacheProps[useKey] = { props, expires, stackedAt: cacheHeap.length };
+  STORE.CACHED_ORDERED_HEAP = [useKey, ...STORE.CACHED_ORDERED_HEAP.filter(v => v !== useKey)]
+  STORE.CACHED_DATA[useKey] = data;
+  STORE.CACHED_PROPS[useKey] = { props, expires, stackedAt: STORE.CACHED_ORDERED_HEAP.length };
   if (expires) {
     timers[useKey] = setTimeout(() => {
       removeDataById(useKey);
@@ -88,29 +90,29 @@ const save = (props, data, expiresDateOrMs = null) => {
   lruTimer = setTimeout(removeLru, 500);
 };
 const saveDataById = (id, data) => {
-  cacheData[id] = data;
-  cacheHeap = [id, ...cacheHeap.filter(v => v !== id)]
-  const { props, expires } = (cacheProps[id] || {});
-  cacheProps[id] = { props, expires, stackedAt: cacheHeap.length };
+  STORE.CACHED_DATA[id] = data;
+  STORE.CACHED_ORDERED_HEAP = [id, ...STORE.CACHED_ORDERED_HEAP.filter(v => v !== id)]
+  const { props, expires } = (STORE.CACHED_PROPS[id] || {});
+  STORE.CACHED_PROPS[id] = { props, expires, stackedAt: STORE.CACHED_ORDERED_HEAP.length };
   clearTimeout(lruTimer);
   lruTimer = setTimeout(removeLru, 500);
 };
 const get = (props) => {
   const useKey = findKeyFromCacheKeys(props);
-  return cacheData[useKey];
+  return STORE.CACHED_DATA[useKey];
 };
-const getDataById = id => cacheData[id];
+const getDataById = id => STORE.CACHED_DATA[id];
 const getId = props => findKeyFromCacheKeys(props);
 const remove = (props) => {
   const useKey = findKeyFromCacheKeys(props);
-  const removed = cacheData[useKey];
-  cacheData[useKey] = undefined;
-  cacheProps[useKey] = undefined;
+  const removed = STORE.CACHED_DATA[useKey];
+  STORE.CACHED_DATA[useKey] = undefined;
+  STORE.CACHED_PROPS[useKey] = undefined;
   if(OPTIONS.EVENTS_ENABLED) { cacheEventEmitter.emit('cache_removed', props, useKey); }
   return removed;
 };
-const clear = () => { cacheData = {}; cacheProps = {}; };
-const removeDataById = (id) => { cacheProps[id] = undefined; cacheData[id] = undefined; };
+const clear = () => { STORE.CACHED_DATA = {}; STORE.CACHED_PROPS = {}; };
+const removeDataById = (id) => { STORE.CACHED_PROPS[id] = undefined; STORE.CACHED_DATA[id] = undefined; };
 
 const on = (eventName, fn) => {
   cacheEventEmitter.on(eventName, function event(...args) {
@@ -119,7 +121,7 @@ const on = (eventName, fn) => {
 };
 
 const cacheSize = (raw = false) => {
-  const size = JSON.stringify(cacheData).length; // bytes
+  const size = JSON.stringify(STORE.CACHED_DATA).length; // bytes
   switch (true) {
     case raw:
       return size;
@@ -130,22 +132,22 @@ const cacheSize = (raw = false) => {
   }
 };
 
-const cacheLength = () => Object.keys(cacheData).length;
+const cacheLength = () => Object.keys(STORE.CACHED_DATA).length;
 
 const removeLru = () => {
   if (!OPTIONS.EXCEED_MEMORY) {
     const sizeNow = cacheSize(true);
     const lengthNow = cacheLength();
     if (
-      cacheHeap.length > 0
+      STORE.CACHED_ORDERED_HEAP.length > 0
       && (
         sizeNow > OPTIONS.MAX_STORAGE
         || lengthNow >= OPTIONS.MAX_COUNT
       )
     ) {
-      const toRemoveId = cacheHeap.pop();
-      cacheData[toRemoveId] = undefined;
-      cacheProps[toRemoveId] = undefined;
+      const toRemoveId = STORE.CACHED_ORDERED_HEAP.pop();
+      STORE.CACHED_DATA[toRemoveId] = undefined;
+      STORE.CACHED_PROPS[toRemoveId] = undefined;
       gc();
       removeLru();
     }
@@ -161,18 +163,16 @@ const config = (options = {}) => {
     exceedMemory = OPTIONS.EXCEED_MEMORY,
     eventsEnabled = OPTIONS.EVENTS_ENABLED,
   } = options;
-  OPTIONS = {
-    MAX_COUNT: maxCount,
-    MAX_STORAGE: maxMemory,
-    EXCEED_MEMORY: exceedMemory,
-    EVENTS_ENABLED: eventsEnabled,
-  };
+  OPTIONS.MAX_COUNT = maxCount;
+  OPTIONS.MAX_STORAGE = maxMemory;
+  OPTIONS.EXCEED_MEMORY = exceedMemory;
+  OPTIONS.EVENTS_ENABLED = eventsEnabled;
   removeLru();
 };
 
 const gc = () => {
-  cacheData = JSON.parse(JSON.stringify(cacheData));
-  cacheProps = JSON.parse(JSON.stringify(cacheProps));
+  STORE.CACHED_DATA = JSON.parse(JSON.stringify(STORE.CACHED_DATA));
+  STORE.CACHED_PROPS = JSON.parse(JSON.stringify(STORE.CACHED_PROPS));
 }
 
 module.exports = {
